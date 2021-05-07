@@ -1,0 +1,122 @@
+This shell script installs Docker in your environment. The script also sets up the correct credentials. 
+kubectl and eksctl were pre-installed for this lab. In the next step, you verify the installed version of kubectl and eksctl
+
+mkdir environment && \
+cd ~/environment && \
+wget https://aws-tc-largeobjects.s3-us-west-2.amazonaws.com/ILT-TF-300-ADVARC-3/lab-3/code-lab3-v301.zip  && \
+unzip code-lab3-v301.zip && \
+touch /tmp/install.log && \
+export log_file="/tmp/install.log" && \
+chmod +x init-docker.sh && \
+./init-docker.sh | tee -a "$log_file"
+
+cd ~/environment/Code/web2048
+
+
+sample docker file
+
+FROM public.ecr.aws/amazonlinux/amazonlinux:latest
+...
+ENV ServerName=web2048-site
+
+RUN yum -y update && \
+    yum -y install httpd unzip && \
+    yum clean all
+...
+
+COPY ./code/ /var/www/html/
+
+
+# Config App
+RUN echo "ServerName fargate.training " >> /etc/httpd/conf/httpd.conf
+
+
+Finally, the application needs to define what port the container is
+going to listen to for inbound requests and the process the container is going to serve requests on. You can use 
+
+EXPOSE 80
+ENTRYPOINT ["/usr/sbin/httpd", "-D", "FOREGROUND"]
+
+build docker image
+
+cd web2048
+docker build -t web2048/website .
+
+run it
+
+docker run -p 80:80 web2048/website &
+
+get public ip 
+
+curl http://169.254.169.254/latest/meta-data/public-ipv4
+
+To create an Amazon ECR repository for each Docker image, run the following command:
+
+aws ecr create-repository --repository-name web2048/website
+
+
+To get the repository URI, run the following command:
+
+aws ecr describe-repositories --query 'repositories[].[repositoryName, repositoryUri]' --output table
+
+
+To export the value of the repository URI to the environment, run the following command:
+
+export REPOSITORY_URI=$(aws ecr describe-repositories --query 'repositories[].[repositoryUri]' --output text)
+echo ${REPOSITORY_URI}
+
+
+
+export ACCOUNT_ID=$(aws sts get-caller-identity --output text --query Account)
+
+export AWS_REGION=$(curl -s 169.254.169.254/latest/dynamic/instance-identity/document | jq -r '.region')
+
+aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+
+docker tag web2048/website:latest ${REPOSITORY_URI}:latest
+
+docker push ${REPOSITORY_URI}:latest
+
+
+To display the available cluster in your Region, run the following command:
+eksctl get clusters
+
+
+kubectl get svc
+
+To display the Kubernetes cluster, run the following command. If the cluster named 
+
+To display the two nodes that are available run the following command:
+
+
+kubectl get nodes
+
+
+for validate the crate forgate
+
+eksctl get fargateprofile \
+  --cluster ekscluster \
+  -o yaml
+  
+  
+  To deploy the 2048 game as a sample application, run the following commands in the Bastion Host terminal window:
+  
+  
+cd ~/environment/fargate
+sed -i 's|REPOSITORY_URI|'${REPOSITORY_URI}'|' 2048-game.yaml
+kubectl apply -f 2048-game.yaml
+
+
+check health of deply
+kubectl -n 2048-game rollout status deployment 2048-deployment
+
+
+workers
+
+
+kubectl get pods -n 2048-game -o=custom-columns=NAME:.metadata.name,STATUS:.status.phase,NODE:.spec.nodeName
+
+kubectl get nodes
+
+classic link loadbalancer
+kubectl get svc -n 2048-game
